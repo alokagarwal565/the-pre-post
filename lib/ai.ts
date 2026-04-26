@@ -1,68 +1,92 @@
+import { GoogleGenerativeAI, Part } from "@google/generative-ai";
+
 /**
  * AI Service Layer for The Pre-Post
- * Uses OpenRouter API with model selection per task
+ * Uses Google Gemini API ONLY
  * 
  * Model Selection Strategy:
- * - Reasoning/Planning: claude-3.5-sonnet (strong reasoning, structured output)
- * - Refining/Thinking: claude-3.5-sonnet (clear thinking, question generation)
- * - Writing/Drafting: gpt-4-turbo (high-quality writing, platform-aware)
+ * - Reasoning/Planning: gemini-3-flash-preview (ultra-fast reasoning, structured output)
+ * - Refining/Thinking: gemini-3-flash-preview (clear thinking, question generation)
+ * - Writing/Drafting: gemini-3.1-pro-preview (premium writing, highly nuanced)
+ * - Image Generation: gemini-2.5-flash-image (fast, conversational image generation)
  */
 
-interface OpenRouterMessage {
+const getGenAI = () => {
+  const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error('GOOGLE_GEMINI_API_KEY environment variable is not set');
+  }
+  return new GoogleGenerativeAI(apiKey);
+};
+
+export const MODELS = {
+  REASONING: 'gemini-3-flash-preview',
+  WRITING: 'gemini-3.1-pro-preview',
+  IMAGE: 'gemini-2.5-flash-image',
+  FALLBACK: 'gemini-2.5-pro',
+};
+
+interface Message {
   role: 'system' | 'user' | 'assistant';
   content: string;
 }
 
-interface OpenRouterResponse {
-  choices: Array<{
-    message: {
-      content: string;
-    };
-  }>;
-}
-
 /**
- * Call OpenRouter API with specified model
+ * Call Gemini API with specified model and optional fallback
  */
-async function callOpenRouter(
-  model: string,
-  messages: OpenRouterMessage[],
+async function callGemini(
+  modelName: string,
+  messages: Message[],
   temperature: number = 0.7,
-  responseFormat?: { type: 'json_object' }
+  responseFormat?: { type: 'json_object' },
+  isFallback: boolean = false
 ): Promise<string> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    throw new Error('OPENROUTER_API_KEY environment variable is not set');
-  }
+  const genAI = getGenAI();
+  
+  const systemMessage = messages.find(m => m.role === 'system');
+  const chatMessages = messages.filter(m => m.role !== 'system');
 
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-      'X-Title': 'The Pre-Post',
-    },
-    body: JSON.stringify({
-      model,
-      messages,
+  try {
+    const model = genAI.getGenerativeModel({ 
+      model: modelName,
+      systemInstruction: systemMessage?.content,
+    });
+
+    const generationConfig = {
       temperature,
-      ...(responseFormat && { response_format: responseFormat }),
-    }),
-  });
+      topP: 0.95,
+      topK: 40,
+      maxOutputTokens: 8192,
+      responseMimeType: responseFormat?.type === 'json_object' ? 'application/json' : 'text/plain',
+    };
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`OpenRouter API error: ${error}`);
+    const contents = chatMessages.map(m => ({
+      role: m.role === 'assistant' ? 'model' as const : 'user' as const,
+      parts: [{ text: m.content } as Part],
+    }));
+
+    const result = await model.generateContent({
+      contents,
+      generationConfig,
+    });
+
+    return result.response.text();
+  } catch (error) {
+    console.error(`Error calling Gemini model ${modelName}:`, error);
+    
+    // If we're not already using the fallback, try the fallback model
+    if (!isFallback && modelName !== MODELS.FALLBACK) {
+      console.log(`Attempting fallback to ${MODELS.FALLBACK}...`);
+      return callGemini(MODELS.FALLBACK, messages, temperature, responseFormat, true);
+    }
+    
+    throw error;
   }
-
-  const data: OpenRouterResponse = await response.json();
-  return data.choices[0]?.message?.content || '';
 }
 
 /**
  * Refine an idea - AI thinking layer
- * Model: claude-3.5-sonnet (excellent at reasoning and structured thinking)
+ * Model: gemini-1.5-pro (excellent at reasoning and structured thinking)
  */
 export async function refineIdea(rawIdea: string): Promise<{
   clarifiedIdea: string;
@@ -88,7 +112,7 @@ Respond in JSON format:
   "angles": ["angle1", "angle2", "angle3"]
 }`;
 
-  const messages: OpenRouterMessage[] = [
+  const messages: Message[] = [
     {
       role: 'system',
       content: 'You are a thoughtful thinking partner. You help clarify ideas and suggest angles, never write content.',
@@ -99,8 +123,8 @@ Respond in JSON format:
     },
   ];
 
-  const response = await callOpenRouter(
-    'anthropic/claude-3.5-sonnet', // Strong reasoning model
+  const response = await callGemini(
+    MODELS.REASONING,
     messages,
     0.7,
     { type: 'json_object' }
@@ -114,7 +138,6 @@ Respond in JSON format:
       angles: Array.isArray(parsed.angles) ? parsed.angles : [],
     };
   } catch (error) {
-    // Fallback if JSON parsing fails
     return {
       clarifiedIdea: rawIdea,
       questions: ['What is the core message?', 'Who is this for?'],
@@ -125,7 +148,7 @@ Respond in JSON format:
 
 /**
  * Generate mind map structure from refined idea
- * Model: claude-3.5-sonnet (structured thinking)
+ * Model: gemini-1.5-pro (structured thinking)
  */
 export async function generateMindMap(
   clarifiedIdea: string,
@@ -159,7 +182,7 @@ Respond in JSON format:
   "cta": "call to action"
 }`;
 
-  const messages: OpenRouterMessage[] = [
+  const messages: Message[] = [
     {
       role: 'system',
       content: 'You create structured thinking maps. Focus on clarity and organization.',
@@ -170,8 +193,8 @@ Respond in JSON format:
     },
   ];
 
-  const response = await callOpenRouter(
-    'anthropic/claude-3.5-sonnet', // Structured thinking
+  const response = await callGemini(
+    MODELS.REASONING,
     messages,
     0.7,
     { type: 'json_object' }
@@ -197,7 +220,7 @@ Respond in JSON format:
 
 /**
  * Analyze content history for repetition and missing perspectives
- * Model: claude-3.5-sonnet (pattern detection, reasoning)
+ * Model: gemini-1.5-pro (pattern detection, reasoning)
  */
 export async function analyzeContentHistory(
   pastContent: Array<{ idea: string; angle: string; platform: string; themes?: string[] }>,
@@ -238,7 +261,7 @@ Respond in JSON:
   "suggestions": ["suggestion 1", "suggestion 2"]
 }`;
 
-  const messages: OpenRouterMessage[] = [
+  const messages: Message[] = [
     {
       role: 'system',
       content: 'You analyze content patterns and suggest fresh perspectives.',
@@ -249,10 +272,10 @@ Respond in JSON:
     },
   ];
 
-  const response = await callOpenRouter(
-    'anthropic/claude-3.5-sonnet', // Pattern analysis
+  const response = await callGemini(
+    MODELS.REASONING,
     messages,
-    0.5, // Lower temperature for more consistent analysis
+    0.5,
     { type: 'json_object' }
   );
 
@@ -276,7 +299,7 @@ Respond in JSON:
 
 /**
  * Generate content plan - decision support
- * Model: claude-3.5-sonnet (strategic thinking, decision support)
+ * Model: gemini-1.5-flash (strategic thinking, decision support)
  */
 export async function generateContentPlan(
   mindMap: { coreIdea: string; supportingPoints: Array<{ point: string }>; cta: string },
@@ -309,7 +332,7 @@ Respond in JSON:
   "suggestedHook": "hook style"
 }`;
 
-  const messages: OpenRouterMessage[] = [
+  const messages: Message[] = [
     {
       role: 'system',
       content: 'You provide strategic content planning advice. You suggest formats and timing, never write content.',
@@ -320,8 +343,8 @@ Respond in JSON:
     },
   ];
 
-  const response = await callOpenRouter(
-    'anthropic/claude-3.5-sonnet', // Strategic thinking
+  const response = await callGemini(
+    MODELS.WRITING,
     messages,
     0.6,
     { type: 'json_object' }
@@ -345,7 +368,7 @@ Respond in JSON:
 
 /**
  * Generate caption draft - final step only
- * Model: gpt-4-turbo (high-quality writing, platform-aware)
+ * Model: gemini-1.5-flash (fast, high-quality writing)
  */
 export async function generateDraft(
   mindMap: { coreIdea: string; supportingPoints: Array<{ point: string; examples: string[] }>; cta: string },
@@ -380,7 +403,7 @@ IMPORTANT RULES:
 
 Write the actual post content now:`;
 
-  const messages: OpenRouterMessage[] = [
+  const messages: Message[] = [
     {
       role: 'system',
       content: `You are a skilled content writer. Write ${platform} posts that are engaging, clear, and platform-appropriate. Output ONLY the post content itself - no meta-commentary, no markdown formatting. Plain text only.`,
@@ -391,10 +414,10 @@ Write the actual post content now:`;
     },
   ];
 
-  const response = await callOpenRouter(
-    'openai/gpt-4-turbo', // High-quality writing model
+  const response = await callGemini(
+    MODELS.WRITING,
     messages,
-    0.8 // Higher temperature for more creative writing
+    0.8
   );
 
   // Clean up any remaining markdown or unwanted patterns
@@ -421,5 +444,35 @@ Write the actual post content now:`;
   }
 
   return cleanedResponse;
+}
+
+/**
+ * Generate an image using gemini-2.5-flash-image
+ */
+export async function generateImage(prompt: string): Promise<{ imageUrl: string; description: string }> {
+  const genAI = getGenAI();
+  const model = genAI.getGenerativeModel({ model: MODELS.IMAGE });
+
+  const result = await model.generateContent({
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: {
+      // @ts-ignore - newer modality support
+      responseModalities: ["IMAGE"],
+    }
+  });
+
+  const part = result.response.candidates?.[0].content.parts.find(p => p.inlineData);
+  
+  if (!part || !part.inlineData) {
+    throw new Error('No image was generated in the response');
+  }
+
+  const imageUrl = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+  
+  // Also get a description if the model provided text alongside the image
+  const textPart = result.response.candidates?.[0].content.parts.find(p => p.text);
+  const description = textPart?.text || "A professionally generated social media image.";
+
+  return { imageUrl, description };
 }
 

@@ -2,7 +2,7 @@
 
 **Think clearly before writing content.**
 
-A production-ready web application that helps creators think through their ideas before jumping into writing. Built with React, Next.js, PostgreSQL (Neon), and OpenRouter AI.
+A production-ready web application that helps creators think through their ideas before jumping into writing. Built with React, Next.js, PostgreSQL (Neon), and Google Gemini AI.
 
 ## Philosophy
 
@@ -56,7 +56,7 @@ Writing is the last step, not the first. The Pre-Post guides creators through a 
 - **Frontend**: React 18, Next.js 14, Tailwind CSS
 - **Backend**: Next.js API Routes (serverless-compatible)
 - **Database**: Neon (PostgreSQL)
-- **AI**: OpenRouter (Claude 3.5 Sonnet for reasoning, GPT-4 Turbo for writing)
+- **AI**: Google Gemini (Gemini 3 Flash for reasoning, Gemini 3.1 Pro for writing)
 - **Deployment**: Vercel
 
 ## Getting Started
@@ -65,7 +65,7 @@ Writing is the last step, not the first. The Pre-Post guides creators through a 
 
 - Node.js 18+ 
 - A Neon PostgreSQL database
-- An OpenRouter API key
+- A Google Gemini API key
 
 ### Installation
 
@@ -88,7 +88,7 @@ cp .env.example .env
 Edit `.env` with your values:
 - `DATABASE_URL`: Your Neon PostgreSQL connection string
 - `JWT_SECRET`: A strong random string for JWT signing
-- `OPENROUTER_API_KEY`: Your OpenRouter API key
+- `GOOGLE_GEMINI_API_KEY`: Your Google Gemini API key
 - `NEXT_PUBLIC_APP_URL`: Your app URL (http://localhost:3000 for local)
 
 4. Run database migrations:
@@ -124,7 +124,7 @@ the-pre-post/
 │   └── globals.css       # Global styles
 ├── contexts/             # React contexts (Auth)
 ├── lib/
-│   ├── ai.ts             # AI service layer (OpenRouter)
+│   ├── ai.ts             # AI service layer (Gemini)
 │   ├── api.ts            # API client utilities
 │   ├── auth.ts          # Authentication utilities
 │   ├── db.ts             # Database connection
@@ -139,17 +139,17 @@ the-pre-post/
 
 The app uses different AI models for different tasks:
 
-- **Reasoning & Planning**: `anthropic/claude-3.5-sonnet`
-  - Strong reasoning capabilities
+- **Reasoning & Planning**: `gemini-3-flash-preview`
+  - Ultra-fast reasoning capabilities
   - Excellent at structured thinking
   - Used for idea refinement, mind maps, content planning
 
-- **Writing**: `openai/gpt-4-turbo`
-  - High-quality writing output
-  - Platform-aware content generation
+- **Writing**: `gemini-3.1-pro-preview`
+  - Premium writing output
+  - Highly nuanced and platform-aware content generation
   - Used only for final caption drafting
 
-Model choices are documented in `lib/ai.ts` with brief explanations.
+Model choices are documented in `lib/ai.ts` with brief explanations. The app also uses `gemini-2.5-pro` as an automatic fallback for all text-based tasks to ensure high availability.
 
 ## Database Schema
 
@@ -174,7 +174,7 @@ See `lib/migrations/001_initial_schema.sql` for the full schema.
 3. Add environment variables in Vercel dashboard:
    - `DATABASE_URL`
    - `JWT_SECRET`
-   - `OPENROUTER_API_KEY`
+   - `GOOGLE_GEMINI_API_KEY`
    - `NEXT_PUBLIC_APP_URL` (your Vercel URL)
 4. Deploy!
 
@@ -186,8 +186,8 @@ The app is fully serverless-compatible and works seamlessly on Vercel.
 |----------|-------------|----------|
 | `DATABASE_URL` | Neon PostgreSQL connection string | Yes |
 | `JWT_SECRET` | Secret key for JWT signing | Yes |
-| `OPENROUTER_API_KEY` | OpenRouter API key | Yes |
-| `NEXT_PUBLIC_APP_URL` | Your app URL (for OpenRouter referrer) | Yes |
+| `GOOGLE_GEMINI_API_KEY` | Google Gemini API key | Yes |
+| `NEXT_PUBLIC_APP_URL` | Your app URL (for Gemini referrer) | Yes |
 
 ## Code Philosophy
 
@@ -213,4 +213,3 @@ MIT
 ## Support
 
 For issues or questions, please open an issue on GitHub.
-
